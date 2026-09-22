@@ -1,0 +1,171 @@
+{
+  "blurb": "Covers Monday's US session: an AI chip rally, a record close for the Nasdaq, and oil down for a fourth straight day.",
+  "date": "2026-09-22",
+  "rounds": [
+    {
+      "answer": 1,
+      "explain": "Meta jumped about 11% on early traction for its Muse AI agent, and the enthusiasm spilled into chipmakers across the market.",
+      "kind": "Headline match",
+      "options": [
+        "Alphabet",
+        "Meta Platforms",
+        "Microsoft",
+        "Amazon"
+      ],
+      "prompt": "Early signs of success for its new AI agent sent this stock up about 11% on Monday. Which company?",
+      "type": "choice"
+    },
+    {
+      "type": "choice",
+      "kind": "Headline match",
+      "prompt": "After Monday's close, this power-components maker jumped about 13% after raising third-quarter revenue guidance, citing royalties from a new patent license. Which company?",
+      "clue": "It makes power modules used in AI data center hardware.",
+      "options": [
+        "Vertiv",
+        "Vicor",
+        "Monolithic Power Systems",
+        "Eaton"
+      ],
+      "answer": 1,
+      "explain": "Vicor rose about 13% after hours on guidance for more than 20% quarter-on-quarter revenue growth, driven by patent royalties."
+    },
+    {
+      "answer": 10,
+      "clue": "Slide to your guess.",
+      "explain": "AMD climbed about 10%, its best stretch in weeks, as chip stocks led the market higher.",
+      "kind": "Guess the move",
+      "max": 20,
+      "min": -5,
+      "prompt": "AMD crossed a $1 trillion market cap for the first time on Monday. How much did the stock gain on the day?",
+      "scale": 3,
+      "signed": true,
+      "start": 5,
+      "step": 0.5,
+      "type": "number",
+      "unit": "%"
+    },
+    {
+      "type": "choice",
+      "kind": "Read the chart",
+      "prompt": "These are Monday's closing moves for the Dow, S&P 500, Nasdaq Composite and Nasdaq 100. Which bar is the S&P 500?",
+      "options": [
+        "Bar A",
+        "Bar B",
+        "Bar C",
+        "Bar D"
+      ],
+      "answer": 3,
+      "chart": {
+        "type": "bar",
+        "unit": "%",
+        "alt": "Bar A +2.3%, Bar B +0.7%, Bar C +2.8%, Bar D +1.5%",
+        "bars": [
+          {
+            "label": "A",
+            "value": 2.3
+          },
+          {
+            "label": "B",
+            "value": 0.7
+          },
+          {
+            "label": "C",
+            "value": 2.8
+          },
+          {
+            "label": "D",
+            "value": 1.5
+          }
+        ]
+      },
+      "explain": "D is the S&P 500 (+1.5%, its best day since early August). A is the Nasdaq Composite (+2.3%, a record close), B is the Dow (+0.7%), and C is the Nasdaq 100 (+2.8%)."
+    },
+    {
+      "type": "choice",
+      "kind": "Gainers and fallers",
+      "prompt": "Nearly everything rallied on Monday. Which S&P 500 sector was the standout decliner?",
+      "options": [
+        "Technology",
+        "Communication Services",
+        "Energy",
+        "Consumer Discretionary"
+      ],
+      "answer": 2,
+      "explain": "Energy fell as oil dropped for a fourth straight session on hopes for diplomatic progress in the Iran war. Tech led the gains, and communication services rode Meta's 11% jump."
+    },
+    {
+      "answer": 0,
+      "explain": "The Plaza Accord, signed at the Plaza Hotel by the US, Japan, West Germany, France and the UK, set out coordinated intervention to weaken the dollar. It fell sharply against the yen and mark over the next two years.",
+      "kind": "On this day",
+      "options": [
+        "Push down the value of the US dollar",
+        "Launch a single European currency",
+        "End the dollar's convertibility to gold",
+        "Coordinate rate cuts after a stock crash"
+      ],
+      "prompt": "On September 22, 1985, finance ministers from five major economies met at a New York hotel and signed an agreement to do what?",
+      "type": "choice"
+    },
+    {
+      "answer": 2022,
+      "chart": {
+        "alt": "Index falls from about 4,770 to a low near 3,590 in September before ending near 3,840",
+        "points": [
+          4766,
+          4516,
+          4374,
+          4530,
+          4132,
+          4132,
+          3785,
+          4130,
+          3955,
+          3586,
+          3872,
+          4080,
+          3840
+        ],
+        "type": "line",
+        "xLabels": [
+          "",
+          "Jan",
+          "",
+          "Mar",
+          "",
+          "May",
+          "",
+          "Jul",
+          "",
+          "Sep",
+          "",
+          "Nov",
+          ""
+        ]
+      },
+      "clue": "The closer you are, the more you score. The range is 2005 to 2025.",
+      "explain": "2022. The S&P 500 fell about 19% as the Fed raised rates at the fastest pace in decades, with a summer bear-market rally that faded into a September low.",
+      "kind": "Guess the year",
+      "max": 2025,
+      "min": 2005,
+      "prompt": "This is the S&P 500's month-end level across one calendar year. Which year?",
+      "start": 2015,
+      "step": 1,
+      "type": "year",
+      "window": 8
+    },
+    {
+      "type": "choice",
+      "kind": "Deal trivia",
+      "prompt": "Which company filed the largest bankruptcy in US history by assets, a Chapter 11 case with about $639 billion on the balance sheet?",
+      "options": [
+        "WorldCom",
+        "General Motors",
+        "Lehman Brothers",
+        "Enron"
+      ],
+      "answer": 2,
+      "explain": "Lehman Brothers filed on September 15, 2008. WorldCom (2002) held about $104 billion in assets, General Motors (2009) about $82 billion, and Enron (2001) about $63 billion."
+    }
+  ],
+  "title": "Chips rip, oil slips"
+}

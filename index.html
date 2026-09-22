@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Morning Tape</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1 class="brand">Morning Tape<small id="sub">Eight rounds on yesterday's markets</small></h1>
+    <div class="tabs" role="tablist" id="tabs" hidden>
+      <button role="tab" id="tab-play" aria-selected="true">Play</button>
+      <button role="tab" id="tab-board" aria-selected="false">Leaderboard</button>
+    </div>
+  </header>
+  <div class="userbar" id="userbar" hidden></div>
+  <main id="app"><div class="sheet"><p class="muted">Loading…</p></div></main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const CFG = window.MT_CONFIG;
+const sb = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+const $app = document.getElementById("app");
+const S = { session:null, puzzle:null, attempts:[], idx:0, view:"play", boardMode:"today",
+            choice:null, value:null, revealed:false, intro:true, busy:false, me:null };
+const MAX = 1000;
+
+// ---------- utils ----------
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const band = p => p>=700 ? "g" : p>=300 ? "y" : "r";
+const emoji = p => p>=700 ? "🟩" : p>=300 ? "🟨" : "🟥";
+const fmt = n => Math.round(n).toLocaleString("en-US");
+const ordinal = n => { const s=["th","st","nd","rd"], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]) };
+function prettyDate(d){ try{ return new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}) }catch{ return d } }
+function toast(t){ const el=document.getElementById("toast"); el.textContent=t; el.classList.add("on"); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove("on"),2000) }
+function email(){ return S.session?.user?.email?.toLowerCase() || "" }
+function allowed(){ return email().endsWith("@"+CFG.ALLOWED_DOMAIN.toLowerCase()) }
+
+// ---------- charts ----------
+function barChart(c){
+  const W=600,H=240,pad=34,n=c.bars.length, vals=c.bars.map(b=>b.value);
+  const hi=Math.max(0,...vals), lo=Math.min(0,...vals), span=(hi-lo)||1;
+  const y=v=>pad+(hi-v)/span*(H-pad*2), bw=(W-pad*2)/n*0.56;
+  let g=`<line x1="${pad}" x2="${W-pad}" y1="${y(0)}" y2="${y(0)}" stroke="var(--rule)" stroke-width="1.5"/>`;
+  c.bars.forEach((b,i)=>{
+    const cx=pad+(i+.5)*(W-pad*2)/n, top=Math.min(y(0),y(b.value)), h=Math.abs(y(b.value)-y(0));
+    g+=`<rect x="${cx-bw/2}" y="${top}" width="${bw}" height="${Math.max(h,2)}" rx="3" fill="${b.value>=0?"var(--up)":"var(--down)"}"/>`;
+    g+=`<text x="${cx}" y="${top-8}" text-anchor="middle">${b.value>0?"+":""}${b.value}${esc(c.unit||"")}</text>`;
+    g+=`<text class="lbl" x="${cx}" y="${H-6}" text-anchor="middle">${esc(b.label)}</text>`;
+  });
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.alt||"Bar chart")}">${g}</svg>`;
+}
+function lineChart(c){
+  const W=600,H=240,pl=48,pr=14,pt=14,pb=30,p=c.points;
+  const hi=Math.max(...p), lo=Math.min(...p), span=(hi-lo)||1;
+  const x=i=>pl+i/(p.length-1)*(W-pl-pr), y=v=>pt+(hi-v)/span*(H-pt-pb);
+  const d=p.map((v,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)).join(" ");
+  let g="";
+  [hi,(hi+lo)/2,lo].forEach(v=>{ g+=`<line x1="${pl}" x2="${W-pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${pl-6}" y="${y(v)+4}" text-anchor="end">${fmt(v)}</text>` });
+  (c.xLabels||[]).forEach((l,i)=>{ if(l) g+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle">${esc(l)}</text>` });
+  g+=`<path d="${d}" fill="none" stroke="var(--ink)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(c.alt||"Line chart")}">${g}</svg>`;
+}
+const chartHTML = c => !c ? "" : c.type==="bar" ? barChart(c) : lineChart(c);
+
+// ---------- auth ----------
+async function signIn(){
+  await sb.auth.signInWithOAuth({ provider:"google", options:{
+    redirectTo: location.origin + location.pathname,
+    queryParams: { hd: CFG.ALLOWED_DOMAIN, prompt: "select_account" } } });
+}
+async function signOut(){ await sb.auth.signOut(); location.reload() }
+
+function renderUserbar(){
+  const bar=document.getElementById("userbar");
+  if(!S.session){ bar.hidden=true; return }
+  bar.hidden=false;
+  bar.innerHTML=`<span>${esc(S.me?.display_name || email())}</span>
+    <button class="linkbtn" id="rename">Change name</button>
+    <button class="linkbtn" id="signout">Sign out</button>`;
+  document.getElementById("signout").onclick=signOut;
+  document.getElementById("rename").onclick=rename;
+}
+async function rename(){
+  const n=prompt("Display name on the leaderboard:", S.me?.display_name || "");
+  if(!n || !n.trim()) return;
+  const name=n.trim().slice(0,40);
+  const { error } = await sb.from("profiles").update({ display_name:name }).eq("id", S.session.user.id);
+  if(error) return toast("Name couldn't be saved. Try again.");
+  S.me={ ...(S.me||{}), display_name:name }; renderUserbar(); toast("Name updated");
+  if(S.view==="board") renderBoard();
+}
+
+// ---------- data ----------
+async function loadAll(){
+  const [{ data:me }, { data:pz, error }] = await Promise.all([
+    sb.from("profiles").select("display_name").eq("id", S.session.user.id).maybeSingle(),
+    sb.rpc("get_current_puzzle")
+  ]);
+  S.me=me; renderUserbar();
+  if(error){ S.puzzle=null; return }
+  S.puzzle = pz && pz[0] ? pz[0] : null;
+  if(!S.puzzle) return;
+  document.getElementById("sub").textContent = `${prettyDate(S.puzzle.puzzle_date)}: eight rounds on yesterday's markets`;
+  const { data:att } = await sb.from("attempts").select("round_idx,answered_at,answer,points")
+    .eq("puzzle_date", S.puzzle.puzzle_date).order("round_idx");
+  S.attempts = att || [];
+  S.idx = S.attempts.filter(a=>a.answered_at).length;
+  S.intro = S.attempts.length===0;
+}
+const answered = () => S.attempts.filter(a=>a.answered_at);
+const runDone = () => S.puzzle && answered().length >= S.puzzle.rounds.length;
+
+// ---------- views ----------
+function setTab(v){ S.view=v;
+  document.getElementById("tab-play").setAttribute("aria-selected", v==="play");
+  document.getElementById("tab-board").setAttribute("aria-selected", v==="board");
+  render(); }
+document.getElementById("tab-play").onclick=()=>setTab("play");
+document.getElementById("tab-board").onclick=()=>setTab("board");
+
+function render(){
+  document.getElementById("tabs").hidden = !(S.session && allowed());
+  if(!S.session) return renderSignIn();
+  if(!allowed()) return renderWrongDomain();
+  if(S.view==="board") return renderBoard();
+  if(!S.puzzle) { $app.innerHTML=`<div class="sheet"><h2 class="q">No tape yet today</h2><p class="clue">Today's puzzle hasn't been posted. Check back after the morning update.</p></div>`; return }
+  if(runDone()) return renderDone();
+  if(S.intro) return renderIntro();
+  renderRound();
+}
+
+function renderSignIn(){
+  $app.innerHTML=`<div class="sheet signin">
+    <h2 class="q">A daily markets game for Kelley</h2>
+    <p class="clue" style="margin:0">Eight rounds on yesterday's news, movers and market history. One run per day, scored on a shared leaderboard.</p>
+    <button class="btn google" id="gsign">Sign in with your @${esc(CFG.ALLOWED_DOMAIN)} Google account</button></div>`;
+  document.getElementById("gsign").onclick=signIn;
+}
+function renderWrongDomain(){
+  $app.innerHTML=`<div class="sheet"><h2 class="q">Use your @${esc(CFG.ALLOWED_DOMAIN)} account</h2>
+    <p class="clue">You're signed in as ${esc(email())}. Morning Tape is open to @${esc(CFG.ALLOWED_DOMAIN)} accounts only.</p>
+    <div class="actions"><button class="btn" id="so">Sign out and switch accounts</button></div></div>`;
+  document.getElementById("so").onclick=signOut;
+}
+function renderIntro(){
+  const p=S.puzzle;
+  $app.innerHTML=`<div class="sheet">
+    <p class="kind">${esc(prettyDate(p.puzzle_date))}</p>
+    <h2 class="q">${esc(p.title||"Today's tape")}</h2>
+    ${p.blurb?`<p class="clue">${esc(p.blurb)}</p>`:""}
+    <p class="clue" style="margin-bottom:0">Eight rounds, up to 1,000 points each. Closer guesses earn partial credit, and faster answers earn a small bonus. The clock starts when each round opens, and you get one run per day.</p>
+    <div class="actions"><button class="btn" id="go">Start today's run</button></div></div>`;
+  document.getElementById("go").onclick=()=>{ S.intro=false; renderRound() };
+}
+function progressBar(){
+  return `<div class="progress" aria-hidden="true">${S.puzzle.rounds.map((_,i)=>{
+    const a=S.attempts.find(x=>x.round_idx===i && x.answered_at);
+    return `<i class="${a?band(a.points):(i===S.idx?"now":"")}"></i>` }).join("")}</div>`;
+}
+function fmtVal(r,v){ if(r.type==="year") return String(v); return (v>0&&r.signed?"+":"")+v+(r.unit||"") }
+
+async function renderRound(){
+  const r=S.puzzle.rounds[S.idx];
+  S.choice=null; S.revealed=false;
+  S.value = r.type==="choice" ? null : (r.start ?? Math.round((r.min+r.max)/2));
+  const body = r.type==="choice"
+    ? `<div class="opts" role="group" aria-label="Answer options">${r.options.map((o,i)=>`<button class="opt" data-i="${i}" aria-pressed="false">${esc(o)}</button>`).join("")}</div>`
+    : `<div class="slider"><output id="out">${fmtVal(r,S.value)}</output>
+        <input type="range" id="rng" min="${r.min}" max="${r.max}" step="${r.step||(r.type==="year"?1:0.5)}" value="${S.value}" aria-label="Your guess">
+        <div class="ends"><span>${fmtVal(r,r.min)}</span><span>${fmtVal(r,r.max)}</span></div></div>`;
+  $app.innerHTML=`<div class="sheet">${progressBar()}
+    <p class="kind">Round ${S.idx+1} of ${S.puzzle.rounds.length}: ${esc(r.kind)}</p>
+    <h2 class="q">${esc(r.prompt)}</h2>
+    ${r.clue?`<p class="clue">${esc(r.clue)}</p>`:""}
+    ${chartHTML(r.chart)}${body}
+    <div class="actions"><button class="btn" id="lock" disabled>Lock in</button></div>
+    <div id="rev"></div></div>`;
+  const lock=document.getElementById("lock");
+  // Server records the start time
+  const { error } = await sb.rpc("start_round", { p_date:S.puzzle.puzzle_date, p_idx:S.idx });
+  if(error){ toast("Couldn't start the round. Refresh and try again."); return }
+  if(r.type==="choice"){
+    $app.querySelectorAll(".opt").forEach(b=>b.onclick=()=>{ if(S.revealed) return;
+      $app.querySelectorAll(".opt").forEach(x=>x.setAttribute("aria-pressed","false"));
+      b.setAttribute("aria-pressed","true"); S.choice=+b.dataset.i; lock.disabled=false });
+  } else {
+    lock.disabled=false;
+    const rng=document.getElementById("rng"), out=document.getElementById("out");
+    rng.oninput=()=>{ S.value=+rng.value; out.textContent=fmtVal(r,S.value) };
+  }
+  lock.onclick=lockIn;
+}
+
+async function lockIn(){
+  if(S.revealed || S.busy) return;
+  const r=S.puzzle.rounds[S.idx], ans = r.type==="choice" ? S.choice : S.value;
+  const lock=document.getElementById("lock"); lock.disabled=true; S.busy=true;
+  const { data, error } = await sb.rpc("submit_answer", { p_date:S.puzzle.puzzle_date, p_idx:S.idx, p_answer:ans });
+  S.busy=false;
+  if(error){ lock.disabled=false; toast("Answer didn't go through. Try again."); return }
+  S.revealed=true;
+  const pts=data.points, correct=Number(data.correct), mine=Number(data.your_answer);
+  const existing=S.attempts.find(a=>a.round_idx===S.idx);
+  if(existing) Object.assign(existing,{answered_at:new Date().toISOString(), points:pts, answer:mine});
+  else S.attempts.push({round_idx:S.idx, answered_at:new Date().toISOString(), points:pts, answer:mine});
+
+  if(r.type==="choice"){
+    $app.querySelectorAll(".opt").forEach(b=>{ b.disabled=true; const i=+b.dataset.i;
+      if(i===correct) b.classList.add("right"); else if(i===mine) b.classList.add("wrong") });
+  } else document.getElementById("rng").disabled=true;
+  lock.remove();
+  let line="";
+  if(r.type!=="choice"){
+    const off=Math.abs(mine-correct);
+    const offTxt = r.type==="year" ? (off===0?" Exactly right.":` ${off} year${off===1?"":"s"} off.`) : "";
+    line=`<p><strong>Answer: ${esc(fmtVal(r,correct))}</strong>. You guessed ${esc(fmtVal(r,mine))}.${offTxt}</p>`;
+  }
+  const last=S.idx===S.puzzle.rounds.length-1;
+  document.getElementById("rev").innerHTML=`<div class="reveal">
+    <div class="pts ${band(pts)}">+${fmt(pts)}</div>${line}<p>${esc(data.explain||"")}</p>
+    <div class="actions"><button class="btn" id="next">${last?"See my score":"Next round"}</button></div></div>`;
+  const next=document.getElementById("next"); next.focus();
+  next.onclick=()=>{ S.idx++; render() };
+}
+
+async function renderDone(){
+  const rounds = S.puzzle.rounds.map((_,i)=> (S.attempts.find(a=>a.round_idx===i)?.points) || 0);
+  const total = rounds.reduce((a,b)=>a+b,0);
+  $app.innerHTML=`<div class="sheet">
+    <p class="kind">${esc(prettyDate(S.puzzle.puzzle_date))}</p>
+    <div class="total">${fmt(total)}<span> / ${fmt(MAX*rounds.length)}</span></div>
+    <p class="grid" aria-label="Round results">${rounds.map(emoji).join("")}</p>
+    <p class="clue" id="rankline" style="margin-top:12px">A new tape posts every morning.</p>
+    <div class="actions"><button class="btn" id="share">Copy result</button><button class="btn ghost" id="lb">View leaderboard</button></div></div>`;
+  document.getElementById("share").onclick=()=>copy(`Morning Tape ${S.puzzle.puzzle_date}\n${fmt(total)} / ${fmt(MAX*rounds.length)}\n${rounds.map(emoji).join("")}\n${location.origin}`);
+  document.getElementById("lb").onclick=()=>setTab("board");
+  const { data } = await sb.rpc("leaderboard_daily", { p_date:S.puzzle.puzzle_date });
+  const i=(data||[]).findIndex(r=>r.user_id===S.session.user.id);
+  const el=document.getElementById("rankline");
+  if(el && i>=0) el.textContent=`You're ${ordinal(i+1)} of ${data.length} today. A new tape posts every morning.`;
+}
+async function copy(t){
+  try{ await navigator.clipboard.writeText(t); toast("Result copied") }
+  catch{ toast("Copy isn't available in this browser") }
+}
+
+async function renderBoard(){
+  const today=S.boardMode==="today";
+  $app.innerHTML=`<div class="sheet"><p class="muted">Loading leaderboard…</p></div>`;
+  const { data, error } = today
+    ? (S.puzzle ? await sb.rpc("leaderboard_daily",{ p_date:S.puzzle.puzzle_date }) : { data:[] })
+    : await sb.rpc("leaderboard_alltime");
+  if(S.view!=="board") return;
+  const rows=data||[], uid=S.session.user.id;
+  const head= today ? `<tr><th class="rank">#</th><th>Player</th><th class="n">Score</th></tr>`
+    : `<tr><th class="rank">#</th><th>Player</th><th class="n">Days</th><th class="n">Avg</th><th class="n">Total</th></tr>`;
+  const body=rows.map((r,i)=>{ const me=r.user_id===uid, nm=esc(r.display_name)+(me?" (you)":"");
+    return today ? `<tr class="${me?"me":""}"><td class="rank">${i+1}</td><td>${nm}</td><td class="n">${fmt(r.total)}</td></tr>`
+      : `<tr class="${me?"me":""}"><td class="rank">${i+1}</td><td>${nm}</td><td class="n">${r.days}</td><td class="n">${fmt(r.average)}</td><td class="n">${fmt(r.total)}</td></tr>` }).join("");
+  $app.innerHTML=`<div class="sheet">
+    <div class="actions" style="margin:0 0 14px"><div class="tabs" role="tablist">
+      <button role="tab" id="bt" aria-selected="${today}">Today</button>
+      <button role="tab" id="ba" aria-selected="${!today}">All time</button></div>
+      ${S.puzzle?`<span class="muted" style="font-size:14px">${esc(prettyDate(S.puzzle.puzzle_date))}</span>`:""}</div>
+    ${error?`<p class="err">The leaderboard didn't load. Refresh to try again.</p>`
+      : rows.length?`<table><thead>${head}</thead><tbody>${body}</tbody></table>`
+      : `<p class="empty">${today?"No finished runs yet today. Finish yours to take the top spot.":"No finished runs yet."}</p>`}
+  </div>`;
+  document.getElementById("bt").onclick=()=>{ S.boardMode="today"; renderBoard() };
+  document.getElementById("ba").onclick=()=>{ S.boardMode="all"; renderBoard() };
+}
+
+// ---------- boot ----------
+(async()=>{
+  const { data:{ session } } = await sb.auth.getSession();
+  S.session=session;
+  if(S.session && allowed()) await loadAll();
+  render();
+  sb.auth.onAuthStateChange(async (evt, session)=>{
+    if(evt==="SIGNED_IN" && !S.session){ S.session=session; if(allowed()) await loadAll(); render() }
+    if(evt==="SIGNED_OUT"){ S.session=null; render() }
+  });
+})();
+</script>
+</body>
+</html>

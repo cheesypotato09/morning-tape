@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Morning Tape admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><h1 class="brand">Post today's tape<small>Paste the puzzle JSON from Claude, check it, then publish.</small></h1></header>
+  <main id="app"><div class="sheet"><p class="muted">Loading…</p></div></main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const CFG=window.MT_CONFIG, sb=supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY), $app=document.getElementById("app");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(t){const el=document.getElementById("toast");el.textContent=t;el.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove("on"),2200)}
+let parsed=null;
+
+function validate(txt){
+  let p; try{ p=JSON.parse(txt) }catch(e){ return { errors:["This isn't valid JSON: "+e.message] } }
+  const errs=[];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(p.date||"")) errs.push("Missing or malformed \"date\" (use YYYY-MM-DD).");
+  if(!Array.isArray(p.rounds)||!p.rounds.length) errs.push("\"rounds\" must be a non-empty list.");
+  (p.rounds||[]).forEach((r,i)=>{
+    const n=`Round ${i+1}:`;
+    if(!r.prompt) errs.push(`${n} missing prompt.`);
+    if(!r.explain) errs.push(`${n} missing explain.`);
+    if(r.type==="choice"){
+      if(!Array.isArray(r.options)||r.options.length<2) errs.push(`${n} needs at least two options.`);
+      else if(!Number.isInteger(r.answer)||r.answer<0||r.answer>=r.options.length) errs.push(`${n} answer must be an option index from 0 to ${r.options.length-1}.`);
+    } else if(r.type==="number"||r.type==="year"){
+      ["min","max","answer"].forEach(k=>{ if(typeof r[k]!=="number") errs.push(`${n} "${k}" must be a number.`) });
+      if(typeof r.answer==="number" && (r.answer<r.min||r.answer>r.max)) errs.push(`${n} answer is outside the slider range.`);
+    } else errs.push(`${n} type must be choice, number or year.`);
+    if(r.chart && r.chart.type==="bar" && !Array.isArray(r.chart.bars)) errs.push(`${n} bar chart needs "bars".`);
+    if(r.chart && r.chart.type==="line" && !Array.isArray(r.chart.points)) errs.push(`${n} line chart needs "points".`);
+  });
+  if(p.rounds && p.rounds.length!==8) errs.push(`Heads up: this puzzle has ${p.rounds.length} rounds instead of 8.`);
+  return { p, errors:errs };
+}
+function answerText(r){ return r.type==="choice" ? r.options?.[r.answer] : r.answer+(r.unit&&r.type!=="year"?r.unit:"") }
+
+async function renderAdmin(){
+  $app.innerHTML=`<div class="sheet">
+    <label for="json" class="kind">Puzzle JSON</label>
+    <textarea id="json" spellcheck="false" placeholder='{"date":"2026-09-23","title":"…","rounds":[…]}'></textarea>
+    <div class="actions"><button class="btn ghost" id="check">Check puzzle</button><button class="btn" id="pub" disabled>Publish</button></div>
+    <div id="result"></div></div>
+    <div class="sheet" style="margin-top:18px"><p class="kind">Recent puzzles</p><div id="recent" class="muted">Loading…</div></div>`;
+  const ta=document.getElementById("json"), pub=document.getElementById("pub");
+  ta.oninput=()=>{ parsed=null; pub.disabled=true };
+  document.getElementById("check").onclick=()=>{
+    const { p, errors }=validate(ta.value), hard=errors.filter(e=>!e.startsWith("Heads up"));
+    const out=document.getElementById("result");
+    if(hard.length){ parsed=null; pub.disabled=true;
+      out.innerHTML=`<div class="reveal"><p class="err">Fix these before publishing:</p><ul>${errors.map(e=>`<li>${esc(e)}</li>`).join("")}</ul></div>`; return }
+    parsed=p; pub.disabled=false;
+    out.innerHTML=`<div class="reveal"><p class="ok">Looks good. Publishing for ${esc(p.date)}.</p>
+      ${errors.length?`<p class="muted">${esc(errors[0])}</p>`:""}
+      <p><strong>${esc(p.title||"Untitled")}</strong></p>
+      <ol class="preview">${p.rounds.map(r=>`<li>${esc(r.kind||r.type)}: ${esc(r.prompt)}<br><span class="muted">Answer: ${esc(answerText(r))}</span></li>`).join("")}</ol></div>`;
+  };
+  pub.onclick=async()=>{
+    if(!parsed) return;
+    pub.disabled=true;
+    const { error }=await sb.rpc("publish_puzzle",{ p:parsed });
+    if(error){ pub.disabled=false; toast("Publish failed: "+error.message); return }
+    toast("Published "+parsed.date); loadRecent();
+  };
+  loadRecent();
+}
+async function loadRecent(){
+  const { data, error }=await sb.rpc("list_puzzles"), el=document.getElementById("recent");
+  if(error){ el.textContent="Couldn't load recent puzzles."; return }
+  el.innerHTML = data.length ? `<table><thead><tr><th>Date</th><th>Title</th><th class="n">Players</th></tr></thead><tbody>${
+    data.map(r=>`<tr><td>${esc(r.puzzle_date)}</td><td>${esc(r.title)}</td><td class="n">${r.players}</td></tr>`).join("")}</tbody></table>` : "Nothing published yet.";
+}
+
+(async()=>{
+  const { data:{ session } }=await sb.auth.getSession();
+  if(!session){
+    $app.innerHTML=`<div class="sheet"><div class="actions" style="margin:0"><button class="btn" id="si">Sign in with Google</button></div></div>`;
+    document.getElementById("si").onclick=()=>sb.auth.signInWithOAuth({ provider:"google", options:{ redirectTo:location.href, queryParams:{ hd:CFG.ALLOWED_DOMAIN } } });
+    return;
+  }
+  const { data:isAdmin }=await sb.rpc("am_admin");
+  if(!isAdmin){ $app.innerHTML=`<div class="sheet"><h2 class="q">Admins only</h2><p class="clue">${esc(session.user.email)} isn't set up as an admin. Add your account to the admins table in Supabase (see the README).</p></div>`; return }
+  renderAdmin();
+})();
+</script>
+</body>
+</html>
