@@ -89,7 +89,7 @@ async function loadRecent(){
   const { data:{ session } }=await sb.auth.getSession();
   if(!session){
     $app.innerHTML=`<div class="sheet"><div class="actions" style="margin:0"><button class="btn" id="si">Sign in with Google</button></div></div>`;
-    document.getElementById("si").onclick=()=>sb.auth.signInWithOAuth({ provider:"google", options:{ redirectTo:location.href, queryParams:{ hd:CFG.ALLOWED_DOMAIN } } });
+    document.getElementById("si").onclick=()=>sb.auth.signInWithOAuth({ provider:"google", options:{ redirectTo:location.href, queryParams: CFG.ALLOWED_DOMAIN ? { hd:CFG.ALLOWED_DOMAIN } : {} } });
     return;
   }
   const { data:isAdmin }=await sb.rpc("am_admin");

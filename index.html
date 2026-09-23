@@ -43,7 +43,8 @@ const ordinal = n => { const s=["th","st","nd","rd"], v=n%100; return n+(s[(v-20
 function prettyDate(d){ try{ return new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}) }catch{ return d } }
 function toast(t){ const el=document.getElementById("toast"); el.textContent=t; el.classList.add("on"); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove("on"),2000) }
 function email(){ return S.session?.user?.email?.toLowerCase() || "" }
-function allowed(){ return email().endsWith("@"+CFG.ALLOWED_DOMAIN.toLowerCase()) }
+const DOMAIN=(CFG.ALLOWED_DOMAIN||"").toLowerCase();
+function allowed(){ return !DOMAIN || email().endsWith("@"+DOMAIN) }
 
 // ---------- charts ----------
 function barChart(c){
@@ -76,7 +77,7 @@ const chartHTML = c => !c ? "" : c.type==="bar" ? barChart(c) : lineChart(c);
 async function signIn(){
   await sb.auth.signInWithOAuth({ provider:"google", options:{
     redirectTo: location.origin + location.pathname,
-    queryParams: { hd: CFG.ALLOWED_DOMAIN, prompt: "select_account" } } });
+    queryParams: DOMAIN ? { hd: DOMAIN, prompt: "select_account" } : { prompt: "select_account" } } });
 }
 async function signOut(){ await sb.auth.signOut(); location.reload() }
 
@@ -141,9 +142,9 @@ function render(){
 
 function renderSignIn(){
   $app.innerHTML=`<div class="sheet signin">
-    <h2 class="q">A daily markets game for Kelley</h2>
+    <h2 class="q">A daily markets game</h2>
     <p class="clue" style="margin:0">Eight rounds on yesterday's news, movers and market history. One run per day, scored on a shared leaderboard.</p>
-    <button class="btn google" id="gsign">Sign in with your @${esc(CFG.ALLOWED_DOMAIN)} Google account</button></div>`;
+    <button class="btn google" id="gsign">${DOMAIN?`Sign in with your @${esc(DOMAIN)} Google account`:"Sign in with Google"}</button></div>`;
   document.getElementById("gsign").onclick=signIn;
 }
 function renderWrongDomain(){
