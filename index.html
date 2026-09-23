@@ -16,7 +16,9 @@
     <h1 class="brand">Morning Tape<small id="sub">Eight rounds on yesterday's markets</small></h1>
     <div class="tabs" role="tablist" id="tabs" hidden>
       <button role="tab" id="tab-play" aria-selected="true">Play</button>
+      <button role="tab" id="tab-recap" aria-selected="false">Recap</button>
       <button role="tab" id="tab-board" aria-selected="false">Leaderboard</button>
+      <a class="tablink" href="https://medium.com/@jcstekloff" target="_blank" rel="noopener">Subscribe to my friend's Medium</a>
     </div>
   </header>
   <div class="userbar" id="userbar" hidden></div>
@@ -123,10 +125,10 @@ const runDone = () => S.puzzle && answered().length >= S.puzzle.rounds.length;
 
 // ---------- views ----------
 function setTab(v){ S.view=v;
-  document.getElementById("tab-play").setAttribute("aria-selected", v==="play");
-  document.getElementById("tab-board").setAttribute("aria-selected", v==="board");
+  ["play","recap","board"].forEach(t=>document.getElementById("tab-"+t).setAttribute("aria-selected", v===t));
   render(); }
 document.getElementById("tab-play").onclick=()=>setTab("play");
+document.getElementById("tab-recap").onclick=()=>setTab("recap");
 document.getElementById("tab-board").onclick=()=>setTab("board");
 
 function render(){
@@ -134,6 +136,7 @@ function render(){
   if(!S.session) return renderSignIn();
   if(!allowed()) return renderWrongDomain();
   if(S.view==="board") return renderBoard();
+  if(S.view==="recap") return renderRecap();
   if(!S.puzzle) { $app.innerHTML=`<div class="sheet"><h2 class="q">No tape yet today</h2><p class="clue">Today's puzzle hasn't been posted. Check back after the morning update.</p></div>`; return }
   if(runDone()) return renderDone();
   if(S.intro) return renderIntro();
@@ -242,7 +245,8 @@ async function renderDone(){
     <div class="total">${fmt(total)}<span> / ${fmt(MAX*rounds.length)}</span></div>
     <p class="grid" aria-label="Round results">${rounds.map(emoji).join("")}</p>
     <p class="clue" id="rankline" style="margin-top:12px">A new tape posts every morning.</p>
-    <div class="actions"><button class="btn" id="share">Copy result</button><button class="btn ghost" id="lb">View leaderboard</button></div></div>`;
+    <div class="actions"><button class="btn" id="share">Copy result</button><button class="btn ghost" id="recapbtn">Read the breakdown</button><button class="btn ghost" id="lb">Leaderboard</button></div></div>`;
+  document.getElementById("recapbtn").onclick=()=>setTab("recap");
   document.getElementById("share").onclick=()=>copy(`Morning Tape ${S.puzzle.puzzle_date}\n${fmt(total)} / ${fmt(MAX*rounds.length)}\n${rounds.map(emoji).join("")}\n${location.origin}`);
   document.getElementById("lb").onclick=()=>setTab("board");
   const { data } = await sb.rpc("leaderboard_daily", { p_date:S.puzzle.puzzle_date });
@@ -253,6 +257,33 @@ async function renderDone(){
 async function copy(t){
   try{ await navigator.clipboard.writeText(t); toast("Result copied") }
   catch{ toast("Copy isn't available in this browser") }
+}
+
+function recapHTML(text){
+  return text.split(/\n{2,}/).map(block=>{
+    const lines=block.split("\n").filter(Boolean);
+    if(lines.every(l=>l.trim().startsWith("- ")))
+      return `<ul>${lines.map(l=>`<li>${esc(l.trim().slice(2))}</li>`).join("")}</ul>`;
+    if(lines.length===1 && lines[0].startsWith("## "))
+      return `<h3 class="rh">${esc(lines[0].slice(3))}</h3>`;
+    return `<p>${esc(block)}</p>`;
+  }).join("");
+}
+function renderRecap(){
+  if(!S.puzzle) { $app.innerHTML=`<div class="sheet"><p class="clue">No tape posted yet today.</p></div>`; return }
+  if(!runDone()){
+    $app.innerHTML=`<div class="sheet"><h2 class="q">Recap locks until you play</h2>
+      <p class="clue">The breakdown gives away several answers, so finish today's eight rounds first.</p>
+      <div class="actions"><button class="btn" id="goplay">Back to the game</button></div></div>`;
+    document.getElementById("goplay").onclick=()=>setTab("play"); return;
+  }
+  const r=S.puzzle.recap;
+  $app.innerHTML=`<div class="sheet recap">
+    <p class="kind">${esc(prettyDate(S.puzzle.puzzle_date))}</p>
+    <h2 class="q">${esc(S.puzzle.title||"Market breakdown")}</h2>
+    ${r?recapHTML(r):`<p class="clue">No breakdown posted for today.</p>`}
+    <p class="muted" style="margin-top:22px">More markets writing in <a href="https://medium.com/@jcstekloff" target="_blank" rel="noopener" style="color:inherit">the newsletter</a>.</p>
+  </div>`;
 }
 
 async function renderBoard(){
