@@ -87,9 +87,9 @@ function renderUserbar(){
   const bar=document.getElementById("userbar");
   if(!S.session){ bar.hidden=true; return }
   bar.hidden=false;
-  bar.innerHTML=`<span>${esc(S.me?.display_name || "Player")}</span>
+  bar.innerHTML=`<span>${esc(S.me?.display_name || email())}</span>
     <button class="linkbtn" id="rename">Change name</button>
-    <button class="linkbtn" id="signout">Leave</button>`;
+    <button class="linkbtn" id="signout">Sign out</button>`;
   document.getElementById("signout").onclick=signOut;
   document.getElementById("rename").onclick=rename;
 }
@@ -147,25 +147,8 @@ function renderSignIn(){
   $app.innerHTML=`<div class="sheet signin">
     <h2 class="q">A daily markets game</h2>
     <p class="clue" style="margin:0">Eight rounds on yesterday's news, movers and market history. One run per day, scored on a shared leaderboard.</p>
-    <label class="kind" for="nm" style="margin:6px 0 0">Your name on the leaderboard</label>
-    <input id="nm" class="nameinput" maxlength="30" autocomplete="name" placeholder="e.g. Drew K">
-    <div class="actions" style="margin:4px 0 0"><button class="btn" id="start">Start playing</button></div>
-    <p class="muted" style="font-size:13px;margin:6px 0 0">Your progress is saved in this browser. Use the same device and browser each day to keep your streak on the board.</p>
-    </div>`;
-  const input=document.getElementById("nm"), go=document.getElementById("start");
-  input.focus();
-  input.onkeydown=e=>{ if(e.key==="Enter") go.click() };
-  go.onclick=async()=>{
-    const name=input.value.trim();
-    if(!name){ input.focus(); return toast("Enter a name first") }
-    go.disabled=true; go.textContent="Starting…";
-    const { data, error } = await sb.auth.signInAnonymously({ options:{ data:{ full_name:name.slice(0,30) } } });
-    if(error){ go.disabled=false; go.textContent="Start playing"; return toast("Couldn't start a session. Try again.") }
-    S.session=data.session;
-    await sb.from("profiles").update({ display_name:name.slice(0,30) }).eq("id", data.user.id);
-    await loadAll();
-    render();
-  };
+    <button class="btn google" id="gsign">${DOMAIN?`Sign in with your @${esc(DOMAIN)} Google account`:"Sign in with Google"}</button></div>`;
+  document.getElementById("gsign").onclick=signIn;
 }
 
 function renderWrongDomain(){
