@@ -97,3 +97,6 @@ textarea{width:100%; min-height:260px; font:14px/1.45 ui-monospace, SFMono-Regul
 .recap ul{max-width:64ch; margin:0 0 14px; padding-left:20px}
 .recap li{margin:0 0 6px}
 .recap .rh{font-family:var(--display); font-weight:700; font-size:19px; margin:22px 0 8px}
+
+.nameinput{width:100%; max-width:320px; font:500 17px var(--body); color:var(--ink); background:var(--paper); border:1.5px solid var(--rule); border-radius:6px; padding:12px 14px}
+.nameinput:focus{border-color:var(--ink)}
